@@ -11,6 +11,10 @@ import fs from 'fs';
 import { MemoryStore } from './db';
 import { startDashboardServer } from './dashboard';
 
+// zod is provided by OpenCode's runtime node_modules.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const z = require('zod') as typeof import('zod');
+
 // Mirrors the SDK Event union — only the fields we actually need.
 // SDK events carry data in `properties`, not directly on the event.
 // e.g. session.created  → properties.info.id
@@ -71,6 +75,9 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
   let activeSessionCount = 0;
   let shutdownDashboard: (() => void) | null = null;
   let dashboardStarted = false;
+
+  // Track sessions that have already had context injected to avoid repeats.
+  const contextInjectedSessions = new Set<string>();
 
   async function ensureDashboardServer(): Promise<void> {
     if (dashboardStarted) return;
@@ -134,6 +141,58 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
     return mapping;
   }
 
+  async function summarizeSession(mapping: SessionMapping): Promise<void> {
+    try {
+      const observations = await store.getObservations(mapping.dbSessionId);
+      const filesRead = new Set<string>();
+      const filesEdited = new Set<string>();
+      const toolCounts: Record<string, number> = {};
+
+      for (const obs of observations) {
+        let meta: Record<string, any> = {};
+        try {
+          if (obs.metadata) meta = JSON.parse(obs.metadata);
+        } catch {
+          // ignore malformed metadata
+        }
+        const tool: string = meta.tool || '';
+        if (!tool) continue;
+
+        toolCounts[tool] = (toolCounts[tool] || 0) + 1;
+
+        const filePath: string = meta.args?.file_path || '';
+        if (tool === 'read' && filePath) {
+          filesRead.add(filePath);
+        } else if ((tool === 'write' || tool === 'edit') && filePath) {
+          filesEdited.add(filePath);
+        }
+      }
+
+      const filesReadArr = Array.from(filesRead);
+      const filesEditedArr = Array.from(filesEdited);
+      const bashCount = toolCounts['bash'] || toolCounts['Bash'] || 0;
+
+      const parts: string[] = [];
+      if (filesReadArr.length) parts.push(`Read ${filesReadArr.length} file${filesReadArr.length !== 1 ? 's' : ''}`);
+      if (filesEditedArr.length) {
+        const names = filesEditedArr.slice(0, 3).map(f => path.basename(f)).join(', ');
+        parts.push(`edited ${filesEditedArr.length} file${filesEditedArr.length !== 1 ? 's' : ''} (${names})`);
+      }
+      if (bashCount) parts.push(`ran ${bashCount} bash command${bashCount !== 1 ? 's' : ''}`);
+
+      const key_actions = parts.length ? parts.join(', ') : 'No significant actions recorded';
+
+      await store.createSummary(mapping.dbSessionId, mapping.project, {
+        files_read: filesReadArr,
+        files_edited: filesEditedArr,
+        tools_used: toolCounts,
+        key_actions,
+      });
+    } catch {
+      // silent — do not break OpenCode
+    }
+  }
+
   return {
     // Generic event stream – we listen for session lifecycle events here.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -159,6 +218,8 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
         const mapping = sessionById.get(key);
         if (mapping) {
           await store.endSession(mapping.dbSessionId, 'OpenCode session deleted.');
+          // Summarize the session before removing from map
+          await summarizeSession(mapping);
           sessionById.delete(key);
         }
         tryShutdownDashboard();
@@ -196,6 +257,58 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
         // Best-effort capture; do not let errors break OpenCode.
         // eslint-disable-next-line no-console
         console.error('opencode-mem: error capturing tool execution', err);
+      }
+    },
+
+    // Inject recent session memory into the system prompt, once per session.
+    'experimental.chat.system.transform': async (input: { sessionID?: string; model: any }, output: { system: string[] }) => {
+      const sid = input.sessionID;
+      if (!sid || contextInjectedSessions.has(sid)) return;
+      contextInjectedSessions.add(sid);
+
+      try {
+        const sessions = await store.getRecentSessionsWithSummaries(5);
+        if (!sessions.length) return;
+
+        // Format concise memory block, keep under ~400 tokens
+        const lines: string[] = ['<opencode-memory>', 'Recent session context:'];
+        for (const { session, summary } of sessions) {
+          lines.push(`\n[${session.project} | ${session.started_at.slice(0, 10)}]`);
+          if (summary) {
+            if (summary.key_actions) lines.push(`  Summary: ${summary.key_actions}`);
+            const edited = JSON.parse(summary.files_edited || '[]') as string[];
+            if (edited.length) lines.push(`  Files edited: ${edited.slice(0, 5).map((f: string) => f.split('/').pop()).join(', ')}`);
+          }
+        }
+        lines.push('</opencode-memory>');
+        output.system.push(lines.join('\n'));
+      } catch {
+        // silent
+      }
+    },
+
+    // Register custom mem_search tool so OpenCode can search past session memory.
+    tool: {
+      mem_search: {
+        description: 'Search past OpenCode session memory for relevant context, code patterns, file history, and past decisions. Use this when you need to recall what was done in previous sessions.',
+        args: {
+          query: z.string().describe('Search query — use keywords related to what you want to recall')
+        },
+        execute: async ({ query }: { query: string }) => {
+          try {
+            const results = await store.searchFTS(query, 8);
+            if (!results.length) return `No memory found for: "${query}"`;
+            const lines = [`Memory search results for "${query}":\n`];
+            for (const r of results) {
+              lines.push(`[${r.project} | ${r.started_at?.slice(0, 10) || ''}]`);
+              lines.push(String(r.content || '').slice(0, 300));
+              lines.push('---');
+            }
+            return lines.join('\n');
+          } catch (e) {
+            return `Search error: ${String(e)}`;
+          }
+        }
       }
     }
   };
