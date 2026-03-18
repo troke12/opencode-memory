@@ -6,6 +6,8 @@
 // - record basic session lifecycle events
 
 import path from 'path';
+import os from 'os';
+import fs from 'fs';
 import { MemoryStore } from './db';
 import { startDashboardServer } from './dashboard';
 
@@ -41,8 +43,16 @@ interface SessionMapping {
 }
 
 export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
+  // Store globally so all projects share one memory database.
+  // Override with OPENCODE_MEM_DB env var if needed.
+  const globalDir = process.env.OPENCODE_MEM_DB
+    ? path.dirname(process.env.OPENCODE_MEM_DB)
+    : path.join(os.homedir(), '.local', 'share', 'opencode-memory');
+  fs.mkdirSync(globalDir, { recursive: true });
+  const dbPath = process.env.OPENCODE_MEM_DB
+    ? process.env.OPENCODE_MEM_DB
+    : path.join(globalDir, 'memory.sqlite');
   const baseDir = ctx.directory || process.cwd();
-  const dbPath = path.join(baseDir, 'memory.sqlite');
   const store = new MemoryStore(dbPath);
   await store.init();
 
