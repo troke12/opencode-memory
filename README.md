@@ -15,16 +15,25 @@ Captures tool calls, user prompts, and session summaries across OpenCode session
 
 ## Installation
 
-### 1. Install the package into OpenCode's node_modules
+### Option A — One-liner (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/troke12/opencode-memory/master/install.sh | bash
+```
+
+The script will:
+1. Run `bun add @troke12/opencode-memory` inside `~/.config/opencode`
+2. Add `"@troke12/opencode-memory"` to your `~/.config/opencode/opencode.json` automatically
+3. Print confirmation when done
+
+### Option B — Manual
 
 ```bash
 cd ~/.config/opencode
 bun add @troke12/opencode-memory
 ```
 
-### 2. Register the plugin in your OpenCode config
-
-Edit `~/.config/opencode/opencode.json` and add the plugin:
+Then edit `~/.config/opencode/opencode.json`:
 
 ```json
 {
@@ -32,9 +41,16 @@ Edit `~/.config/opencode/opencode.json` and add the plugin:
 }
 ```
 
-### 3. Restart OpenCode
+### Updating
 
-That's it. The plugin loads automatically on next start.
+```bash
+cd ~/.config/opencode
+bun add @troke12/opencode-memory@latest
+```
+
+### Restart OpenCode
+
+After installation or update, restart OpenCode to load the new version.
 
 ## How it works
 
