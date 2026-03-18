@@ -1,0 +1,39 @@
+{
+  "description": "Opencode persistent memory plugin",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/../../opencode-mem/mem\" hook SessionStart",
+            "timeout": 300
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/../../opencode-mem/mem\" hook SessionEnd",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+             "type": "command",
+             "command": "node \"${CLAUDE_PLUGIN_ROOT}/../../opencode-mem/mem\" hook UserPromptSubmit",
+             "timeout": 60
+          }
+        ]
+      }
+    ]
+  }
+}
