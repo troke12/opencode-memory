@@ -4,14 +4,13 @@ import path from 'path';
 import { MemoryStore } from './db';
 
 export interface DashboardOptions {
-  dbPath: string;
+  store: MemoryStore;
   port?: number;
 }
 
 export async function startDashboardServer(options: DashboardOptions): Promise<void> {
   const port = options.port ?? 37777;
-  const store = new MemoryStore(options.dbPath);
-  await store.init();
+  const store = options.store;
 
   const server = http.createServer(async (req, res) => {
     try {
@@ -74,12 +73,7 @@ export async function startDashboardServer(options: DashboardOptions): Promise<v
   });
 
   server.listen(port, () => {
-    const dbName = path.basename(options.dbPath);
-    console.log(`Memory dashboard listening on http://localhost:${port} (DB: ${dbName})`);
-  });
-
-  server.on('close', async () => {
-    await store.close();
+    console.log(`Memory dashboard listening on http://localhost:${port}`);
   });
 }
 

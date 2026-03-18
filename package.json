@@ -1,6 +1,6 @@
 {
   "name": "@troke12/opencode-memory",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Persistent SQLite-backed memory plugin for OpenCode.",
   "main": "cjs-main.js",
   "files": [

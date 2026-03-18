@@ -73,7 +73,7 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
     const port = portEnv ? parseInt(portEnv, 10) || 48765 : 48765;
 
     debug('starting dashboard server', { dbPath, port });
-    startDashboardServer({ dbPath, port }).then(() => {
+    startDashboardServer({ store, port }).then(() => {
       debug('dashboard server exited');
     }).catch((err) => {
       // eslint-disable-next-line no-console

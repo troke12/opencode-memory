@@ -210,7 +210,9 @@ yargs(process.argv.slice(2))
         return;
       }
 
-      await startDashboardServer({ dbPath: DB_PATH, port });
+      const dashStore = new MemoryStore(DB_PATH);
+      await dashStore.init();
+      await startDashboardServer({ store: dashStore, port });
       // keep process alive; do not close store here because dashboard has its own connection
     } catch (err) {
       console.error('Error starting dashboard server:', err);
