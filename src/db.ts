@@ -152,15 +152,29 @@ export class MemoryStore {
     return results;
   }
 
+  async getObservationCount(): Promise<number> {
+    if (!this.db) await this.init();
+    const row = this.db!.prepare('SELECT COUNT(*) as n FROM observations').get() as { n: number };
+    return row.n;
+  }
+
   async searchFTS(query: string, limit: number = 20): Promise<any[]> {
     if (!this.db) await this.init();
+    // Build FTS5 OR query: each word becomes an independent term joined with OR
+    // so multi-word natural language queries match any containing word.
+    const ftsQuery = query
+      .split(/\s+/)
+      .filter(Boolean)
+      .map(w => w.replace(/["*]/g, '')) // strip FTS5 special chars
+      .filter(Boolean)
+      .join(' OR ');
     return this.db!.prepare(`
       SELECT o.*, s.project, s.started_at
       FROM observations o
       JOIN sessions s ON o.session_id = s.id
       WHERE o.id IN (SELECT rowid FROM observations_fts WHERE observations_fts MATCH ?)
       ORDER BY o.created_at DESC LIMIT ?
-    `).all(query, limit) as any[];
+    `).all(ftsQuery, limit) as any[];
   }
 
   async close(): Promise<void> {

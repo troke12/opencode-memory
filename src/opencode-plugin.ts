@@ -208,27 +208,48 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
         const projectName = path.basename(ctx.project?.worktree || ctx.worktree || baseDir);
         const dbId = await store.createSession(projectName);
         sessionById.set(key, { dbSessionId: dbId, project: projectName });
-        await store.addObservation(dbId, 'system', 'OpenCode session created.', {
-          source: 'opencode-plugin',
-          eventType: event.type
-        });
       } else if (event.type === 'session.deleted') {
         activeSessionCount = Math.max(0, activeSessionCount - 1);
         const key = getEventSessionKey(event);
         const mapping = sessionById.get(key);
         if (mapping) {
-          await store.endSession(mapping.dbSessionId, 'OpenCode session deleted.');
-          // Summarize the session before removing from map
+          await store.endSession(mapping.dbSessionId);
           await summarizeSession(mapping);
           sessionById.delete(key);
         }
         tryShutdownDashboard();
-      } else if (event.type === 'session.compacted' || event.type === 'session.updated') {
-        const mapping = await getOrCreateSessionForEvent(event);
-        await store.addObservation(mapping.dbSessionId, 'system', 'OpenCode session lifecycle event.', {
-          source: 'opencode-plugin',
-          eventType: event.type
+      } else if (event.type === 'session.compacted') {
+        // Ensure the session mapping exists; no observation needed.
+        await getOrCreateSessionForEvent(event);
+      }
+    },
+
+    // Capture user prompts AND auto-inject relevant memory context into the message.
+    // This is deterministic: memory is always searched and prepended before the AI
+    // sees the message — no reliance on the AI deciding to call mem_search itself.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    'chat.message': async (input: { sessionID: string; messageID?: string }, output: { message: any; parts: any[] }) => {
+      try {
+        const mapping = await getOrCreateSessionForEvent({ sessionId: input.sessionID } as AnyEvent);
+
+        // Extract text content from TextPart entries
+        const text = (output.parts || [])
+          .filter((p: any) => p.type === 'text' && p.text)
+          .map((p: any) => String(p.text).trim())
+          .join('\n')
+          .trim();
+        if (!text) return;
+
+        debug('chat.message', { sessionID: input.sessionID, len: text.length });
+
+        // Save the prompt as an observation (for future recall)
+        await store.addObservation(mapping.dbSessionId, 'prompt', text.slice(0, 2000), {
+          messageID: input.messageID,
         });
+
+        debug('chat.message: prompt captured', { len: text.length });
+      } catch {
+        // silent — never break the message flow
       }
     },
 
@@ -260,28 +281,32 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
       }
     },
 
-    // Inject recent session memory into the system prompt, once per session.
+    // Inject a lightweight memory notice once per session.
+    // We do NOT dump full session history here — that bloats the context and
+    // causes compaction to re-process it every rebuild. Instead we tell the AI
+    // that memory is available and let it pull what it needs via mem_search.
     'experimental.chat.system.transform': async (input: { sessionID?: string; model: any }, output: { system: string[] }) => {
       const sid = input.sessionID;
       if (!sid || contextInjectedSessions.has(sid)) return;
       contextInjectedSessions.add(sid);
 
       try {
-        const sessions = await store.getRecentSessionsWithSummaries(5);
-        if (!sessions.length) return;
+        const count = await store.getObservationCount();
+        if (!count) return;
 
-        // Format concise memory block, keep under ~400 tokens
-        const lines: string[] = ['<opencode-memory>', 'Recent session context:'];
-        for (const { session, summary } of sessions) {
-          lines.push(`\n[${session.project} | ${session.started_at.slice(0, 10)}]`);
-          if (summary) {
-            if (summary.key_actions) lines.push(`  Summary: ${summary.key_actions}`);
-            const edited = JSON.parse(summary.files_edited || '[]') as string[];
-            if (edited.length) lines.push(`  Files edited: ${edited.slice(0, 5).map((f: string) => f.split('/').pop()).join(', ')}`);
-          }
-        }
-        lines.push('</opencode-memory>');
-        output.system.push(lines.join('\n'));
+        // Also grab the most recent session's key_actions as a tiny hint
+        const recent = await store.getRecentSessionsWithSummaries(1);
+        const lastAction = recent[0]?.summary?.key_actions;
+        const hint = lastAction ? ` Last session: ${lastAction}.` : '';
+
+        output.system.push(
+          `<opencode-memory-notice>` +
+          `Persistent session memory is available (${count} observations).${hint} ` +
+          `ALWAYS call mem_search before reading files or exploring the codebase — ` +
+          `memory recalls what was already read/edited in past sessions, saving tokens. ` +
+          `Search for filenames, concepts, or tool names relevant to the current task.` +
+          `</opencode-memory-notice>`
+        );
       } catch {
         // silent
       }
@@ -290,19 +315,19 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
     // Register custom mem_search tool so OpenCode can search past session memory.
     tool: {
       mem_search: {
-        description: 'Search past OpenCode session memory for relevant context, code patterns, file history, and past decisions. Use this when you need to recall what was done in previous sessions.',
+        description: 'Search persistent session memory for past tool calls, files read/edited, and decisions. ' +
+          'Call this BEFORE reading files or exploring the codebase to avoid redundant work and save tokens. ' +
+          'Returns matching observations from previous OpenCode sessions.',
         args: {
-          query: z.string().describe('Search query — use keywords related to what you want to recall')
+          query: z.string().describe('Keywords to search — filenames, concepts, tool names, or topics')
         },
         execute: async ({ query }: { query: string }) => {
           try {
-            const results = await store.searchFTS(query, 8);
+            const results = (await store.search(query)).slice(0, 5);
             if (!results.length) return `No memory found for: "${query}"`;
-            const lines = [`Memory search results for "${query}":\n`];
+            const lines: string[] = [];
             for (const r of results) {
-              lines.push(`[${r.project} | ${r.started_at?.slice(0, 10) || ''}]`);
-              lines.push(String(r.content || '').slice(0, 300));
-              lines.push('---');
+              lines.push(`[${r.project} | ${r.started_at?.slice(0, 10) || ''} | ${r.type}] ${String(r.content || '').slice(0, 150)}`);
             }
             return lines.join('\n');
           } catch (e) {

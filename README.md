@@ -1,82 +1,72 @@
-# Persistent Opencode Memory Plugin
+# @troke12/opencode-memory
 
-A lightweight, persistent memory tool for Opencode (and other CLI agents) inspired by [claude-mem](https://github.com/thedotmack/claude-mem).
+Persistent SQLite-backed memory plugin for [OpenCode](https://opencode.ai). Inspired by [claude-mem](https://github.com/thedotmack/claude-mem).
 
-This tool allows you to track your sessions, commands, and notes, and recall them later. It is designed to be used by the agent itself to maintain context across sessions.
+Captures tool calls, user prompts, and session summaries across OpenCode sessions — and makes them searchable so the AI can recall past context without re-reading files.
 
 ## Features
 
--   **Session Management**: Organize work into sessions per project.
--   **Automatic Logging**: Execute commands via `mem run` to automatically log output.
--   **Notes**: Record thoughts, plans, and observations.
--   **Search**: Retrieve past context using keyword search.
--   **Persistence**: All data is stored in a local SQLite database (`memory.sqlite`).
+- **Auto-capture**: Records every tool call (read, write, bash, etc.) and user prompt automatically
+- **Session summaries**: Generates a summary of files read/edited when a session closes
+- **FTS search**: Full-text search across all past observations via `mem_search` tool
+- **Memory notice**: Injects a lightweight notice into the system prompt so the AI knows memory is available
+- **Web dashboard**: Browse sessions and observations at `http://localhost:48765`
+- **Global DB**: All projects share one database at `~/.local/share/opencode-memory/memory.sqlite`
 
 ## Installation
 
-1.  Clone this repository.
-2.  Run `npm install`.
-3.  Use the `./mem` script.
-
-## Usage
-
-### 1. Start a Session
-
-Start a new session for a specific project. This creates a `.session` file to track the active session ID.
+### 1. Install the package into OpenCode's node_modules
 
 ```bash
-./mem start-session my-project
+cd ~/.config/opencode
+bun add @troke12/opencode-memory
 ```
 
-### 2. Run Commands
+### 2. Register the plugin in your OpenCode config
 
-Execute shell commands and automatically log the command, output, and exit code to the active session.
+Edit `~/.config/opencode/opencode.json` and add the plugin:
 
-```bash
-./mem run ls -F
-./mem run npm test
+```json
+{
+  "plugin": ["@troke12/opencode-memory"]
+}
 ```
 
-### 3. Log Notes
+### 3. Restart OpenCode
 
-Record your thoughts, observations, or plans.
+That's it. The plugin loads automatically on next start.
 
-```bash
-./mem note "The tests failed because of a missing dependency."
-./mem note "Plan: Install dependency and retry."
+## How it works
+
+On each OpenCode session the plugin:
+
+1. Creates a session record in SQLite
+2. Captures every tool execution (`tool.execute.after`) and user prompt (`chat.message`) as observations
+3. Injects a one-line memory notice into the system prompt once per session
+4. On session close, writes a summary (files read/edited, tools used)
+
+The AI can search past sessions using the built-in `mem_search` tool:
+
+> *"Use mem_search to recall what files were edited in the last session"*
+
+## Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `OPENCODE_MEM_DB` | `~/.local/share/opencode-memory/memory.sqlite` | Custom DB path |
+| `OPENCODE_MEM_DASHBOARD` | enabled | Set to `0` to disable dashboard |
+| `OPENCODE_MEM_DASHBOARD_PORT` | `48765` | Dashboard port |
+| `OPENCODE_MEM_DEBUG` | disabled | Set to `1` for debug logs |
+
+## Dashboard
+
+A local web UI is available while any session is open:
+
+```
+http://localhost:48765
 ```
 
-### 4. Search Memory
-
-Retrieve past observations, commands, and notes. Matches against content and project names.
-
-```bash
-./mem search "dependency"
-./mem search "ls"
-```
-
-### 5. Check Status
-
-See the current active session ID.
-
-```bash
-./mem status
-```
-
-### 6. End Session
-
-End the current session, optionally providing a summary.
-
-```bash
-./mem end-session "Fixed the dependency issue and tests passed."
-```
-
-## Database Schema
-
-The data is stored in `memory.sqlite` with the following schema:
-
--   **sessions**: `id`, `project`, `started_at`, `ended_at`, `summary`
--   **observations**: `id`, `session_id`, `type` (command, note), `content`, `metadata` (JSON), `created_at`
+It shows all sessions, observations, and a search interface. The server shuts down automatically when all sessions are closed.
 
 ## License
 
