@@ -27,30 +27,21 @@ npm install --omit=dev >/dev/null 2>&1 || npm install
 echo "[opencode-memory] Building TypeScript..."
 npx tsc
 
-CONFIG_DIR="$HOME/.config/opencode"
-CONFIG_FILE="$CONFIG_DIR/opencode.json"
+# Create a small shim in the global plugin directory so OpenCode's
+# local plugin loader can find and load opencode-memory automatically
+# without requiring changes to opencode.json.
+PLUGIN_ROOT="$HOME/.config/opencode/plugins"
+SHIM_PATH="$PLUGIN_ROOT/opencode-memory.js"
 
-echo "[opencode-memory] Ensuring global opencode.json has plugin entry..."
-mkdir -p "$CONFIG_DIR"
+mkdir -p "$PLUGIN_ROOT"
 
-if [ -f "$CONFIG_FILE" ]; then
-  # If file exists but does not mention opencode-memory, append a hint for the user.
-  if ! grep -q "opencode-memory/dist/opencode-plugin.js" "$CONFIG_FILE"; then
-    echo "[opencode-memory] NOTE: Existing opencode.json detected."
-    echo "[opencode-memory] Please add this plugin path manually to the \"plugin\" array:"
-    echo "  ./plugins/opencode-memory/dist/opencode-plugin.js"
-  fi
-else
-  cat >"$CONFIG_FILE" <<'JSON'
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": [
-    "./plugins/opencode-memory/dist/opencode-plugin.js"
-  ]
-}
-JSON
-  echo "[opencode-memory] Created global opencode.json with opencode-memory plugin enabled."
-fi
+cat >"$SHIM_PATH" <<'JS'
+// Shim file so OpenCode can load the opencode-memory plugin
+// from the global plugins directory.
+module.exports = require("./opencode-memory/dist/opencode-plugin.js");
+JS
+
+echo "[opencode-memory] Wrote plugin shim: $SHIM_PATH"
 
 cat <<'EOF'
 
