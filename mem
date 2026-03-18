@@ -1,2 +1,2 @@
-#!/bin/bash
-./node_modules/.bin/ts-node src/index.ts "$@"
+#!/usr/bin/env bash
+bun "$(dirname "$0")/src/index.ts" "$@"

@@ -1,5 +1,4 @@
-import sqlite3 from 'sqlite3';
-import { open, Database } from 'sqlite';
+import { Database } from 'bun:sqlite';
 
 export class MemoryStore {
   private db: Database | null = null;
@@ -9,13 +8,9 @@ export class MemoryStore {
     this.dbPath = dbPath;
   }
 
-  async init() {
-    this.db = await open({
-      filename: this.dbPath,
-      driver: sqlite3.Database
-    });
-
-    await this.db.exec(`
+  async init(): Promise<void> {
+    this.db = new Database(this.dbPath, { create: true });
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project TEXT NOT NULL,
@@ -27,9 +22,9 @@ export class MemoryStore {
       CREATE TABLE IF NOT EXISTS observations (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         session_id INTEGER,
-        type TEXT NOT NULL, -- 'command', 'file_read', 'file_write', 'note', 'tool_output'
+        type TEXT NOT NULL,
         content TEXT,
-        metadata TEXT, -- JSON string for extra details (e.g. file path, command args)
+        metadata TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY(session_id) REFERENCES sessions(id)
       );
@@ -41,72 +36,55 @@ export class MemoryStore {
 
   async createSession(project: string): Promise<number> {
     if (!this.db) await this.init();
-    const result = await this.db!.run(
-      'INSERT INTO sessions (project) VALUES (?)',
-      project
-    );
-    return result.lastID!;
+    const result = this.db!.prepare('INSERT INTO sessions (project) VALUES (?)').run(project);
+    return result.lastInsertRowid as number;
   }
 
   async endSession(sessionId: number, summary?: string): Promise<void> {
     if (!this.db) await this.init();
-    await this.db!.run(
-      'UPDATE sessions SET ended_at = CURRENT_TIMESTAMP, summary = ? WHERE id = ?',
-      summary || null,
-      sessionId
-    );
+    this.db!.prepare('UPDATE sessions SET ended_at = CURRENT_TIMESTAMP, summary = ? WHERE id = ?').run(summary ?? null, sessionId);
   }
 
   async addObservation(sessionId: number, type: string, content: string, metadata: object = {}): Promise<void> {
     if (!this.db) await this.init();
-    await this.db!.run(
-      'INSERT INTO observations (session_id, type, content, metadata) VALUES (?, ?, ?, ?)',
-      sessionId,
-      type,
-      content,
-      JSON.stringify(metadata)
+    this.db!.prepare('INSERT INTO observations (session_id, type, content, metadata) VALUES (?, ?, ?, ?)').run(
+      sessionId, type, content, JSON.stringify(metadata)
     );
   }
 
   async getSession(sessionId: number): Promise<any> {
     if (!this.db) await this.init();
-    return await this.db!.get('SELECT * FROM sessions WHERE id = ?', sessionId);
+    return this.db!.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId);
   }
 
   async getRecentSessions(project?: string, limit: number = 5): Promise<any[]> {
     if (!this.db) await this.init();
-    let query = 'SELECT * FROM sessions';
-    const params: any[] = [];
     if (project) {
-      query += ' WHERE project = ?';
-      params.push(project);
+      return this.db!.prepare('SELECT * FROM sessions WHERE project = ? ORDER BY started_at DESC LIMIT ?').all(project, limit) as any[];
     }
-    query += ' ORDER BY started_at DESC LIMIT ?';
-    params.push(limit);
-    return await this.db!.all(query, ...params);
+    return this.db!.prepare('SELECT * FROM sessions ORDER BY started_at DESC LIMIT ?').all(limit) as any[];
   }
 
   async getObservations(sessionId: number): Promise<any[]> {
     if (!this.db) await this.init();
-    return await this.db!.all('SELECT * FROM observations WHERE session_id = ? ORDER BY created_at ASC', sessionId);
+    return this.db!.prepare('SELECT * FROM observations WHERE session_id = ? ORDER BY created_at ASC').all(sessionId) as any[];
   }
 
   async search(query: string): Promise<any[]> {
-      if (!this.db) await this.init();
-      // Simple LIKE search for now
-      const searchPattern = `%${query}%`;
-      return await this.db!.all(`
-        SELECT o.*, s.project, s.started_at 
-        FROM observations o
-        JOIN sessions s ON o.session_id = s.id
-        WHERE o.content LIKE ? OR o.metadata LIKE ? OR s.project LIKE ?
-        ORDER BY o.created_at DESC LIMIT 20
-      `, searchPattern, searchPattern, searchPattern);
+    if (!this.db) await this.init();
+    const searchPattern = `%${query}%`;
+    return this.db!.prepare(`
+      SELECT o.*, s.project, s.started_at
+      FROM observations o
+      JOIN sessions s ON o.session_id = s.id
+      WHERE o.content LIKE ? OR o.metadata LIKE ? OR s.project LIKE ?
+      ORDER BY o.created_at DESC LIMIT 20
+    `).all(searchPattern, searchPattern, searchPattern) as any[];
   }
 
   async close(): Promise<void> {
     if (this.db) {
-      await this.db.close();
+      this.db.close();
       this.db = null;
     }
   }

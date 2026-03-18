@@ -1,6 +1,6 @@
 {
   "name": "@troke12/opencode-memory",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Persistent SQLite-backed memory plugin for OpenCode.",
   "main": "cjs-main.js",
   "files": [
@@ -24,15 +24,12 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "sqlite": "^5.1.1",
-    "sqlite3": "^6.0.1",
     "yargs": "^18.0.0"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "@types/sqlite3": "^3.1.11",
     "@types/yargs": "^17.0.35",
-    "ts-node": "^10.9.2",
+    "bun-types": "^1.2.0",
     "typescript": "^5.9.3"
   }
 }
