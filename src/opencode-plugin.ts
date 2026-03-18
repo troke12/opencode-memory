@@ -161,3 +161,7 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
     }
   };
 };
+
+// Default export for OpenCode's legacy `plugin` array loader,
+// which expects the module itself to be a plugin function.
+export default OpenCodeMemPlugin;
