@@ -32,13 +32,25 @@ npx tsc
 mkdir -p "$PLUGIN_ROOT"
 
 # Create a small shim so OpenCode can load the plugin via a simple
-# CommonJS module path from opencode.json.
+# CommonJS module path from opencode.json and the global plugin
+# directory. This also logs when the shim is loaded if
+# OPENCODE_MEM_DEBUG is enabled.
 SHIM_PATH="$PLUGIN_ROOT/opencode-memory.js"
 
 cat >"$SHIM_PATH" <<'JS'
 // Shim file so OpenCode can load the opencode-memory plugin
 // from the global plugins directory.
-module.exports = require("./opencode-memory/dist/opencode-plugin.js");
+
+const pluginModule = require("./opencode-memory/dist/opencode-plugin.js");
+
+const debugEnv = process.env.OPENCODE_MEM_DEBUG;
+const debugEnabled = !!debugEnv && debugEnv !== '0' && debugEnv.toLowerCase() !== 'false';
+if (debugEnabled) {
+  // eslint-disable-next-line no-console
+  console.log("[opencode-mem] shim loaded from ~/.config/opencode/plugins/opencode-memory.js");
+}
+
+module.exports = pluginModule;
 JS
 
 echo "[opencode-memory] Wrote plugin shim: $SHIM_PATH"
