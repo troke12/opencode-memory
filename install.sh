@@ -27,22 +27,44 @@ npm install --omit=dev >/dev/null 2>&1 || npm install
 echo "[opencode-memory] Building TypeScript..."
 npx tsc
 
+CONFIG_DIR="$HOME/.config/opencode"
+CONFIG_FILE="$CONFIG_DIR/opencode.json"
+
+echo "[opencode-memory] Ensuring global opencode.json has plugin entry..."
+mkdir -p "$CONFIG_DIR"
+
+if [ -f "$CONFIG_FILE" ]; then
+  # If file exists but does not mention opencode-memory, append a hint for the user.
+  if ! grep -q "opencode-memory/dist/opencode-plugin.js" "$CONFIG_FILE"; then
+    echo "[opencode-memory] NOTE: Existing opencode.json detected."
+    echo "[opencode-memory] Please add this plugin path manually to the \"plugin\" array:"
+    echo "  ./plugins/opencode-memory/dist/opencode-plugin.js"
+  fi
+else
+  cat >"$CONFIG_FILE" <<'JSON'
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    "./plugins/opencode-memory/dist/opencode-plugin.js"
+  ]
+}
+JSON
+  echo "[opencode-memory] Created global opencode.json with opencode-memory plugin enabled."
+fi
+
 cat <<'EOF'
 
 Install complete.
 
-To enable the plugin in OpenCode, add something like this to your opencode.json:
+Global OpenCode config (~/.config/opencode/opencode.json) now references the opencode-memory plugin
+when no previous config existed.
 
-  {
-    "plugins": [
-      "./.config/opencode/plugins/opencode-memory/dist/opencode-plugin.js"
-    ]
-  }
-
-You can then use the CLI helper in that directory:
+You can use the CLI helper in that directory:
 
   cd ~/.config/opencode/plugins/opencode-memory
   ./mem sessions
-  ./mem dashboard 37777
+  ./mem dashboard 48765
+
+Then start a new OpenCode session; the plugin should activate automatically.
 
 EOF

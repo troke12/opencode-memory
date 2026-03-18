@@ -200,9 +200,9 @@ yargs(process.argv.slice(2))
     }
   })
   .command('dashboard [port]', 'Start HTTP dashboard for memory sessions', (yargs) => {
-    return yargs.positional('port', { describe: 'Port to listen on', type: 'number', default: 37777 });
+    return yargs.positional('port', { describe: 'Port to listen on', type: 'number', default: 48765 });
   }, async (argv) => {
-    const port = (argv.port as number) || 37777;
+    const port = (argv.port as number) || 48765;
     try {
       const alreadyRunning = await isDashboardRunning(port);
       if (alreadyRunning) {

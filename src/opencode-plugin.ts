@@ -49,7 +49,7 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
 
     dashboardStarted = true;
     const portEnv = process.env.OPENCODE_MEM_DASHBOARD_PORT;
-    const port = portEnv ? parseInt(portEnv, 10) || 37777 : 37777;
+    const port = portEnv ? parseInt(portEnv, 10) || 48765 : 48765;
 
     try {
       // Fire and forget; do not block plugin initialization.
