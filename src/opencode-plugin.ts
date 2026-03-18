@@ -39,6 +39,17 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
   const store = new MemoryStore(dbPath);
   await store.init();
 
+  const debugEnv = process.env.OPENCODE_MEM_DEBUG;
+  const debugEnabled = !!debugEnv && debugEnv !== '0' && debugEnv.toLowerCase() !== 'false';
+
+  function debug(...args: unknown[]): void {
+    if (!debugEnabled) return;
+    // eslint-disable-next-line no-console
+    console.log('[opencode-mem]', ...args);
+  }
+
+  debug('plugin initialized', { dbPath, baseDir, project: ctx.project?.name });
+
   const sessionById = new Map<string, SessionMapping>();
 
   let dashboardStarted = false;
@@ -55,6 +66,7 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
     const port = portEnv ? parseInt(portEnv, 10) || 48765 : 48765;
 
     try {
+      debug('starting dashboard server', { dbPath, port });
       // Fire and forget; do not block plugin initialization.
       void startDashboardServer({ dbPath, port });
     } catch (err) {
@@ -98,6 +110,8 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
     event: async ({ event }: { event: AnyEvent }) => {
       if (!event || !event.type) return;
 
+      debug('event', event.type, { sessionId: getEventSessionKey(event) });
+
       if (event.type === 'session.created') {
         await ensureDashboardServer();
         const key = getEventSessionKey(event);
@@ -132,6 +146,7 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
           try {
             const mapping = await getOrCreateSessionForEvent(input as AnyEvent);
             const toolName = String(input.tool || 'unknown');
+            debug('tool.execute.after', { tool: toolName, sessionId: mapping.dbSessionId });
             const args = input.args ?? {};
             const ok = !output?.error;
 
