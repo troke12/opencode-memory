@@ -15,15 +15,14 @@ type AnyEvent = {
   session?: { id?: string | number };
 };
 
-// Minimal view of the OpenCode plugin context based on
-// https://dev.to/einarcesar/does-opencode-support-hooks-a-complete-guide-to-extensibility-k3p
-// We only rely on fields we actually use.
+// Matches @opencode-ai/plugin PluginInput. project.worktree is the project
+// root path; there is no "name" field.
 type PluginContext = {
-  project?: { name?: string };
+  project?: { id?: string; worktree?: string };
   directory?: string;
+  worktree?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   client?: any;
-  // Bun shell helper in OpenCode plugins
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   $?: any;
 };
@@ -48,14 +47,7 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
     console.log('[opencode-mem]', ...args);
   }
 
-  // eslint-disable-next-line no-console
-  console.log('opencode-mem: plugin factory called', {
-    dbPath,
-    baseDir,
-    project: ctx.project?.name
-  });
-
-  debug('plugin initialized', { dbPath, baseDir, project: ctx.project?.name });
+  debug('plugin initialized', { dbPath, baseDir, project: ctx.project?.worktree });
 
   const sessionById = new Map<string, SessionMapping>();
 
@@ -72,14 +64,13 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
     const portEnv = process.env.OPENCODE_MEM_DASHBOARD_PORT;
     const port = portEnv ? parseInt(portEnv, 10) || 48765 : 48765;
 
-    try {
-      debug('starting dashboard server', { dbPath, port });
-      // Fire and forget; do not block plugin initialization.
-      void startDashboardServer({ dbPath, port });
-    } catch (err) {
+    debug('starting dashboard server', { dbPath, port });
+    startDashboardServer({ dbPath, port }).then(() => {
+      debug('dashboard server exited');
+    }).catch((err) => {
       // eslint-disable-next-line no-console
-      console.error('opencode-mem: failed to start dashboard server', err);
-    }
+      console.error('opencode-mem: dashboard server error', err);
+    });
   }
 
   function getEventSessionKey(event: AnyEvent | undefined): string {
@@ -96,7 +87,7 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
 
     await ensureDashboardServer();
 
-    const projectName = ctx.project?.name || path.basename(baseDir);
+    const projectName = path.basename(ctx.project?.worktree || ctx.worktree || baseDir);
 
     const recent = await store.getRecentSessions(projectName, 1);
     let dbId: number;
@@ -122,7 +113,7 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
       if (event.type === 'session.created') {
         await ensureDashboardServer();
         const key = getEventSessionKey(event);
-        const projectName = ctx.project?.name || path.basename(baseDir);
+        const projectName = path.basename(ctx.project?.worktree || ctx.worktree || baseDir);
         const dbId = await store.createSession(projectName);
         sessionById.set(key, { dbSessionId: dbId, project: projectName });
         await store.addObservation(dbId, 'system', 'OpenCode session created.', {
