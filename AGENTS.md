@@ -102,9 +102,12 @@ await this.db!.run('INSERT INTO sessions (project) VALUES (?)', project);
   - `getActiveSessionId()` reads this file; `setActiveSessionId()` writes to it.
   - Always check for an active session before attempting to log observations.
 
-- **Hooks:**
-  - The tool supports hooks (`SessionStart`, `SessionEnd`, `UserPromptSubmit`) defined in `hooks/hooks.json`.
-  - Hooks are handled via the `hook` command in `index.ts`.
+- **OpenCode Plugin Integration:**
+  - `src/opencode-plugin.ts` exposes `OpenCodeMemPlugin`, an OpenCode plugin that listens to session lifecycle events and tool executions.
+  - The plugin uses OpenCode's native hook system (`event`, `tool.execute.after`) to automatically record sessions and observations.
+
+- **CLI Hook Command (Optional):**
+  - The CLI still exposes a `hook` command in `index.ts` for environments that want to trigger memory events manually (for example, via shell scripts).
 
 - **Environment:**
   - `DB_PATH` defaults to `memory.sqlite` in the current working directory.

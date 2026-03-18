@@ -15,6 +15,9 @@ type AnyEvent = {
   session?: { id?: string | number };
 };
 
+// Minimal view of the OpenCode plugin context based on
+// https://dev.to/einarcesar/does-opencode-support-hooks-a-complete-guide-to-extensibility-k3p
+// We only rely on fields we actually use.
 type PluginContext = {
   project?: { name?: string };
   directory?: string;
@@ -38,7 +41,7 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
 
   const sessionById = new Map<string, SessionMapping>();
 
-   let dashboardStarted = false;
+  let dashboardStarted = false;
 
   async function ensureDashboardServer(): Promise<void> {
     if (dashboardStarted) return;
@@ -120,35 +123,40 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
       }
     },
 
-    // Capture tool executions as observations, similar to claude-mem worker.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    'tool.execute.after': async (input: any, output: any) => {
-      try {
-        const mapping = await getOrCreateSessionForEvent(input as AnyEvent);
-        const toolName = String(input.tool || 'unknown');
-        const args = input.args ?? {};
-        const ok = !output?.error;
+    tool: {
+      execute: {
+        // Capture tool executions as observations, following the
+        // `tool.execute.after` shape from the OpenCode plugin guide.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        after: async (input: any, output: any) => {
+          try {
+            const mapping = await getOrCreateSessionForEvent(input as AnyEvent);
+            const toolName = String(input.tool || 'unknown');
+            const args = input.args ?? {};
+            const ok = !output?.error;
 
-        const contentLines: string[] = [];
-        contentLines.push(`Tool: ${toolName}`);
-        contentLines.push(`Success: ${ok}`);
-        contentLines.push('Args: ' + JSON.stringify(args));
-        if (output?.result !== undefined) {
-          const raw = JSON.stringify(output.result);
-          contentLines.push('Result: ' + raw.slice(0, 4000));
+            const contentLines: string[] = [];
+            contentLines.push(`Tool: ${toolName}`);
+            contentLines.push(`Success: ${ok}`);
+            contentLines.push('Args: ' + JSON.stringify(args));
+            if (output?.result !== undefined) {
+              const raw = JSON.stringify(output.result);
+              contentLines.push('Result: ' + raw.slice(0, 4000));
+            }
+
+            await store.addObservation(mapping.dbSessionId, 'tool', contentLines.join('\n'), {
+              tool: toolName,
+              ok,
+              args,
+              // Truncate large results but keep a short snippet in metadata.
+              snippet: output?.result ? String(JSON.stringify(output.result)).slice(0, 512) : undefined
+            });
+          } catch (err) {
+            // Best-effort capture; do not let errors break OpenCode.
+            // eslint-disable-next-line no-console
+            console.error('opencode-mem: error capturing tool execution', err);
+          }
         }
-
-        await store.addObservation(mapping.dbSessionId, 'tool', contentLines.join('\n'), {
-          tool: toolName,
-          ok,
-          args,
-          // Truncate large results but keep a short snippet in metadata.
-          snippet: output?.result ? String(JSON.stringify(output.result)).slice(0, 512) : undefined
-        });
-      } catch (err) {
-        // Best-effort capture; do not let errors break OpenCode.
-        // eslint-disable-next-line no-console
-        console.error('opencode-mem: error capturing tool execution', err);
       }
     }
   };

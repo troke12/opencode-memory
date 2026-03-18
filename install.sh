@@ -35,18 +35,26 @@ mkdir -p "$CONFIG_DIR"
 
 if [ -f "$CONFIG_FILE" ]; then
   # If file exists but does not mention opencode-memory, append a hint for the user.
-  if ! grep -q "opencode-memory/dist/opencode-plugin.js" "$CONFIG_FILE"; then
+  if ! grep -q "opencode-memory" "$CONFIG_FILE"; then
     echo "[opencode-memory] NOTE: Existing opencode.json detected."
-    echo "[opencode-memory] Please add this plugin path manually to the \"plugin\" array:"
-    echo "  ./plugins/opencode-memory/dist/opencode-plugin.js"
+    echo "[opencode-memory] Please add this plugin definition under the \"plugins\" object (see OpenCode docs):"
+    echo "  \"plugins\": {"
+    echo "    \"opencode-memory\": {"
+    echo "      \"enabled\": true,"
+    echo "      \"module\": \"./plugins/opencode-memory/dist/opencode-plugin.js\""
+    echo "    }"
+    echo "  }"
   fi
 else
   cat >"$CONFIG_FILE" <<'JSON'
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": [
-    "./plugins/opencode-memory/dist/opencode-plugin.js"
-  ]
+  "plugins": {
+    "opencode-memory": {
+      "enabled": true,
+      "module": "./plugins/opencode-memory/dist/opencode-plugin.js"
+    }
+  }
 }
 JSON
   echo "[opencode-memory] Created global opencode.json with opencode-memory plugin enabled."

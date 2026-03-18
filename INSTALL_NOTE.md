@@ -1,16 +1,14 @@
 # Opencode Memory Plugin (Simulated Installation)
 
-I have "installed" the `opencode-mem` plugin by:
+This repository provides the `opencode-mem` plugin and a companion `mem` CLI.
 
 1.  **Global Command**: `mem` is available in your PATH.
-2.  **Plugin Directory**: Copied to `~/.opencode/plugins/marketplaces/opencode/opencode-mem` (speculative location).
-3.  **Hooks**: Defined in `hooks/hooks.json` within the plugin directory.
+2.  **Plugin Module**: The OpenCode plugin entry point is `src/opencode-plugin.ts` (exporting `OpenCodeMemPlugin`).
 
-## Automatic Hook Triggering
+The plugin is designed to be enabled via OpenCode's native plugin system as described in:
+https://dev.to/einarcesar/does-opencode-support-hooks-a-complete-guide-to-extensibility-k3p
 
-If Opencode supports hooks similar to Claude Code, it should automatically trigger `mem hook SessionStart` etc. based on the configuration.
-
-If not, you can manually trigger them or use `mem start-session <project>` and `mem run <command>`.
+You can still use the CLI directly in any project directory.
 
 ## Next Session Test
 
