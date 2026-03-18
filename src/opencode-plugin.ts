@@ -9,10 +9,18 @@ import path from 'path';
 import { MemoryStore } from './db';
 import { startDashboardServer } from './dashboard';
 
+// Mirrors the SDK Event union — only the fields we actually need.
+// SDK events carry data in `properties`, not directly on the event.
+// e.g. session.created  → properties.info.id
+//      session.compacted → properties.sessionID
 type AnyEvent = {
   type?: string;
+  // Legacy / synthetic events (e.g. created from tool input)
   sessionId?: string | number;
-  session?: { id?: string | number };
+  properties?: {
+    info?: { id?: string | number };
+    sessionID?: string;
+  };
 };
 
 // Matches @opencode-ai/plugin PluginInput. project.worktree is the project
@@ -75,7 +83,11 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
 
   function getEventSessionKey(event: AnyEvent | undefined): string {
     if (!event) return 'default';
-    const raw = event.sessionId ?? event.session?.id;
+    // Synthetic events (built from tool input) use sessionId directly.
+    // Real SDK events carry the ID inside properties.
+    const raw = event.sessionId
+      ?? event.properties?.info?.id
+      ?? event.properties?.sessionID;
     if (raw === undefined || raw === null) return 'default';
     return String(raw);
   }
