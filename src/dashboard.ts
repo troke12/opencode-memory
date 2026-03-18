@@ -8,7 +8,7 @@ export interface DashboardOptions {
   port?: number;
 }
 
-export async function startDashboardServer(options: DashboardOptions): Promise<void> {
+export async function startDashboardServer(options: DashboardOptions): Promise<() => void> {
   const port = options.port ?? 37777;
   const store = options.store;
 
@@ -40,7 +40,8 @@ export async function startDashboardServer(options: DashboardOptions): Promise<v
 
       if (url.pathname.startsWith('/api/sessions/') && url.pathname.endsWith('/observations')) {
         const parts = url.pathname.split('/').filter(Boolean);
-        const idStr = parts[1];
+        // pathname: /api/sessions/{id}/observations → ['api','sessions','{id}','observations']
+        const idStr = parts[2];
         const sessionId = parseInt(idStr, 10);
         if (!sessionId) {
           res.statusCode = 400;
@@ -72,9 +73,9 @@ export async function startDashboardServer(options: DashboardOptions): Promise<v
     }
   });
 
-  server.listen(port, () => {
-    console.log(`Memory dashboard listening on http://localhost:${port}`);
-  });
+  await new Promise<void>((resolve) => server.listen(port, resolve));
+  console.log(`[opencode-mem] dashboard listening on http://localhost:${port}`);
+  return () => server.close();
 }
 
 function buildHtml(port: number): string {

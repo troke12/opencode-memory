@@ -68,7 +68,8 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
   debug('plugin initialized', { dbPath, baseDir, project: ctx.project?.worktree });
 
   const sessionById = new Map<string, SessionMapping>();
-
+  let activeSessionCount = 0;
+  let shutdownDashboard: (() => void) | null = null;
   let dashboardStarted = false;
 
   async function ensureDashboardServer(): Promise<void> {
@@ -83,12 +84,21 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
     const port = portEnv ? parseInt(portEnv, 10) || 48765 : 48765;
 
     debug('starting dashboard server', { dbPath, port });
-    startDashboardServer({ store, port }).then(() => {
-      debug('dashboard server exited');
+    startDashboardServer({ store, port }).then((shutdown) => {
+      shutdownDashboard = shutdown;
     }).catch((err) => {
+      dashboardStarted = false;
       // eslint-disable-next-line no-console
       console.error('opencode-mem: dashboard server error', err);
     });
+  }
+
+  function tryShutdownDashboard(): void {
+    if (activeSessionCount > 0 || !shutdownDashboard) return;
+    debug('all sessions closed, shutting down dashboard');
+    shutdownDashboard();
+    shutdownDashboard = null;
+    dashboardStarted = false;
   }
 
   function getEventSessionKey(event: AnyEvent | undefined): string {
@@ -133,6 +143,7 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
       debug('event', event.type, { sessionId: getEventSessionKey(event) });
 
       if (event.type === 'session.created') {
+        activeSessionCount++;
         await ensureDashboardServer();
         const key = getEventSessionKey(event);
         const projectName = path.basename(ctx.project?.worktree || ctx.worktree || baseDir);
@@ -143,11 +154,14 @@ export const OpenCodeMemPlugin = async (ctx: PluginContext) => {
           eventType: event.type
         });
       } else if (event.type === 'session.deleted') {
+        activeSessionCount = Math.max(0, activeSessionCount - 1);
         const key = getEventSessionKey(event);
         const mapping = sessionById.get(key);
         if (mapping) {
           await store.endSession(mapping.dbSessionId, 'OpenCode session deleted.');
+          sessionById.delete(key);
         }
+        tryShutdownDashboard();
       } else if (event.type === 'session.compacted' || event.type === 'session.updated') {
         const mapping = await getOrCreateSessionForEvent(event);
         await store.addObservation(mapping.dbSessionId, 'system', 'OpenCode session lifecycle event.', {
